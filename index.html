@@ -1,0 +1,486 @@
+<meta name='viewport' content='width=device-width, initial-scale=1'/><!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Clicks 4.0 -- Story Edition</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: radial-gradient(circle at center, #1a1a1a, #000);
+    height: 100vh;
+    width: 100vw;
+    font-family: 'Segoe UI', sans-serif;
+    color: #fff;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  #ui {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  #scoreboard {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+  }
+  #scoreboard h1 {
+    font-size: 28px;
+    margin: 5px;
+    text-shadow: 0 0 10px #ffd700;
+  }
+  #clickButton {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    background: radial-gradient(circle at center, #6b4b1e, #2c1b0e);
+    box-shadow: 0 0 25px #ffb84d;
+    border: 4px solid #ffcc66;
+    pointer-events: auto;
+    animation: pulse 2s infinite;
+  }
+  #clickButton:active {
+    transform: translateX(-50%) scale(0.95);
+    box-shadow: 0 0 35px #ffaa33;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 15px #ffb84d; }
+    50% { box-shadow: 0 0 35px #ffcc66; }
+    100% { box-shadow: 0 0 15px #ffb84d; }
+  }
+  #epoch {
+    position: absolute;
+    top: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 20px;
+    text-shadow: 0 0 15px #ffcc66;
+  }
+  #shop, #research {
+    position: absolute;
+    bottom: 20px;
+    width: 45%;
+    text-align: center;
+    pointer-events: auto;
+  }
+  #shop { left: 2%; }
+  #research { right: 2%; }
+  button.menu {
+    background: rgba(255, 215, 0, 0.1);
+    border: 2px solid #ffcc66;
+    color: #fff;
+    font-weight: bold;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    text-shadow: 0 0 5px #ffcc66;
+  }
+  button.menu:hover { background: rgba(255, 215, 0, 0.25); }
+  #notification {
+    position: absolute;
+    bottom: 300px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.6);
+    padding: 10px 20px;
+    border-radius: 10px;
+    border: 1px solid #ffcc66;
+    display: none;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<div id="ui">
+  <div id="scoreboard">
+    <h1 id="coins">Монеты: 0</h1>
+    <h1 id="xp">Опыт: 0</h1>
+  </div>
+  <div id="epoch">Эпоха: Каменная</div>
+  <div id="clickButton"></div>
+  <div id="shop"><button class="menu" id="openShop">🛒 Магазин</button></div>
+  <div id="research"><button class="menu" id="openResearch">🌿 Исследования</button></div>
+  <div id="notification"></div>
+</div>
+<script>
+
+// === БЛОК 2: Основная логика кликов и анимация ===
+
+// Получаем элементы
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const coinDisplay = document.getElementById('coins');
+const xpDisplay = document.getElementById('xp');
+const epochDisplay = document.getElementById('epoch');
+const notification = document.getElementById('notification');
+const clickButton = document.getElementById('clickButton');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// Игровые переменные
+let coins = 0;
+let xp = 0;
+let clickValue = 1;
+let epochIndex = 0;
+const epochNames = ["Каменная", "Бронзовая", "Железная", "Золотая", "Машинная", "Сверхтехнологичная"];
+let particles = [];
+let bgHue = 30; // начальный цвет заднего фона (реалистичный оттенок)
+
+// Музыка и звуки
+const bgMusic = new Audio("https://cdn.pixabay.com/audio/2022/08/09/audio_46d3b4e5cb.mp3"); // фоновая музыка
+bgMusic.loop = true;
+bgMusic.volume = 0.2;
+bgMusic.play().catch(()=>{console.log("Автозвук запущен позже");});
+
+const clickSound = new Audio("https://cdn.pixabay.com/audio/2021/09/16/audio_6f8c1a40a8.mp3");
+const epochSound = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_0c1cc6c56c.mp3");
+
+// Обновление UI
+function updateUI() {
+  coinDisplay.textContent = `Монеты: ${coins}`;
+  xpDisplay.textContent = `Опыт: ${xp}`;
+  epochDisplay.textContent = `Эпоха: ${epochNames[epochIndex]}`;
+}
+
+// Создание частиц
+function createParticles(x, y, color) {
+  for (let i = 0; i < 10; i++) {
+    particles.push({
+      x: x,
+      y: y,
+      size: Math.random() * 4 + 2,
+      speedX: (Math.random() - 0.5) * 5,
+      speedY: (Math.random() - 0.5) * 5,
+      color: color,
+      life: 50
+    });
+  }
+}
+
+// Анимация Canvas
+function animate() {
+  ctx.fillStyle = `hsl(${bgHue}, 30%, 10%)`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  bgHue += 0.1;
+
+  // частицы
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    p.x += p.speedX;
+    p.y += p.speedY;
+    p.life--;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  particles = particles.filter(p => p.life > 0);
+
+  requestAnimationFrame(animate);
+}
+animate();
+
+// Клик
+clickButton.addEventListener('click', (e) => {
+  coins += clickValue;
+  xp += Math.floor(clickValue / 2);
+  updateUI();
+  clickSound.currentTime = 0;
+  clickSound.play();
+  createParticles(canvas.width / 2, canvas.height - 150, "#ffcc66");
+  saveGame();
+});
+
+// Уведомления
+function showNotification(text) {
+  notification.innerText = text;
+  notification.style.display = "block";
+  setTimeout(() => { notification.style.display = "none"; }, 2000);
+}
+
+// Загрузка/сохранение
+function saveGame() {
+  localStorage.setItem("clicks4_save", JSON.stringify({
+    coins, xp, clickValue, epochIndex
+  }));
+}
+
+function loadGame() {
+  const data = JSON.parse(localStorage.getItem("clicks4_save"));
+  if (data) {
+    coins = data.coins;
+    xp = data.xp;
+    clickValue = data.clickValue;
+    epochIndex = data.epochIndex;
+    updateUI();
+  }
+}
+loadGame();
+// === БЛОК 3.2: Улучшенный магазин с иконками и эффектами ===
+
+let autoClickers = 0;
+
+// Категории и иконки
+const categories = [
+  { name: "Клик", icon: "💥" },
+  { name: "Автоклик", icon: "⚙️" },
+  { name: "Доход", icon: "💰" },
+  { name: "Опыт", icon: "📘" },
+  { name: "Спец-эффект", icon: "✨" },
+];
+
+// Создаём 100 улучшений
+const upgrades = [];
+const eraUpgrades = ["Каменная", "Бронзовая", "Железная", "Золотая", "Машинная", "Сверхтехнологичная"];
+
+for (let i = 0; i < 100; i++) {
+  const era = eraUpgrades[Math.floor(i / (100 / eraUpgrades.length))];
+  const cat = categories[i % categories.length];
+  const baseCost = 30 + i * 15;
+  const power = 1 + i * 0.1;
+
+  upgrades.push({
+    id: i,
+    name: `${cat.icon} ${era}: ${cat.name} #${i + 1}`,
+    category: cat.name,
+    cost: baseCost,
+    power: power,
+    purchased: false
+  });
+}
+
+// Создание модального магазина
+const shopModal = document.createElement("div");
+shopModal.style.cssText = `
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.8); display: none; align-items: center;
+  justify-content: center; z-index: 1000; color: #fff; flex-direction: column;
+  backdrop-filter: blur(8px);
+`;
+const shopList = document.createElement("div");
+shopList.style.cssText = "max-height: 70%; overflow-y: auto; width: 90%; text-align: left;";
+const closeShopBtn = document.createElement("button");
+closeShopBtn.textContent = "Закрыть магазин";
+closeShopBtn.className = "menu";
+closeShopBtn.style.marginTop = "15px";
+shopModal.appendChild(shopList);
+shopModal.appendChild(closeShopBtn);
+document.body.appendChild(shopModal);
+
+closeShopBtn.onclick = () => (shopModal.style.display = "none");
+
+// Отрисовка магазина
+function renderShop() {
+  shopList.innerHTML = "";
+  const available = upgrades.filter(u => !u.purchased).slice(0, 10);
+  if (available.length === 0) {
+    shopList.innerHTML = "<h3>Все 100 улучшений куплены 🎉</h3>";
+    return;
+  }
+
+  available.forEach((u) => {
+    const item = document.createElement("div");
+    item.style.cssText =
+      "background: rgba(255,215,0,0.1); margin: 6px 0; padding: 8px 12px; border-radius: 8px; border: 1px solid #ffcc66; cursor: pointer;";
+    item.innerHTML = `<b>${u.name}</b><br>💰 ${u.cost} монет • 💎 Эффект: ${u.power.toFixed(1)}`;
+    item.onclick = () => buyUpgrade(u.id, item);
+    shopList.appendChild(item);
+  });
+}
+
+// Эффект покупки
+function flashEffect(color = "#ffcc66") {
+  const flash = document.createElement("div");
+  flash.style.cssText = `
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: ${color}; opacity: 0.2; z-index: 999;
+  `;
+  document.body.appendChild(flash);
+  setTimeout(() => flash.remove(), 150);
+}
+
+// Покупка улучшения
+function buyUpgrade(id, element) {
+  const u = upgrades[id];
+  if (!u || u.purchased) return;
+  if (coins >= u.cost) {
+    coins -= u.cost;
+    switch (u.category) {
+      case "Клик": clickValue += Math.floor(u.power); break;
+      case "Автоклик": autoClickers += 1; break;
+      case "Доход": coins += Math.floor(u.power * 5); break;
+      case "Опыт": xp += Math.floor(u.power * 10); break;
+      case "Спец-эффект": createParticles(canvas.width/2, canvas.height/2, "#ffcc66"); break;
+    }
+    u.purchased = true;
+    element.style.opacity = "0.3";
+    element.style.pointerEvents = "none";
+    flashEffect();
+    clickSound.play();
+    showNotification(`Куплено: ${u.name}!`);
+    updateUI();
+    saveGame();
+  } else {
+    showNotification("Недостаточно монет!");
+  }
+}
+
+// Кнопка магазина
+document.getElementById("openShop").onclick = () => {
+  renderShop();
+  shopModal.style.display = "flex";
+};
+
+// Автокликеры работают каждую секунду
+setInterval(() => {
+  if (autoClickers > 0) {
+    coins += autoClickers * (1 + epochIndex * 0.5);
+    xp += Math.floor(autoClickers / 2);
+    updateUI();
+    saveGame();
+  }
+}, 1000);
+// === БЛОК 4: Древо исследований, эпохи, озвучка ===
+
+// Эпохи и их порог по опыту
+const epochs = [
+  { name: "Каменная", xpRequired: 0, color: "#886644", music: "https://cdn.pixabay.com/audio/2021/09/07/audio_8dd5e9c745.mp3" },
+  { name: "Бронзовая", xpRequired: 200, color: "#a97142", music: "https://cdn.pixabay.com/audio/2023/03/27/audio_4f15d9b0bb.mp3" },
+  { name: "Железная", xpRequired: 600, color: "#9a9a9a", music: "https://cdn.pixabay.com/audio/2023/04/02/audio_3e98fcb5e3.mp3" },
+  { name: "Золотая", xpRequired: 1200, color: "#ffcc33", music: "https://cdn.pixabay.com/audio/2022/07/01/audio_d9b2c21c63.mp3" },
+  { name: "Машинная", xpRequired: 2500, color: "#667788", music: "https://cdn.pixabay.com/audio/2022/03/17/audio_b6c68c7f06.mp3" },
+  { name: "Сверхтехнологичная", xpRequired: 5000, color: "#33ccff", music: "https://cdn.pixabay.com/audio/2023/02/20/audio_90e5b4e7a4.mp3" },
+];
+
+// Голосовые фразы
+const voiceLines = [
+  "https://cdn.pixabay.com/audio/2022/03/15/audio_7c3a2fa9bb.mp3", // "Отлично!"
+  "https://cdn.pixabay.com/audio/2022/05/16/audio_3487f7a63c.mp3", // "Продолжай!"
+  "https://cdn.pixabay.com/audio/2022/09/09/audio_aeccf82a7d.mp3", // "Новая эра!"
+];
+
+// Древо исследований
+const researchButton = document.getElementById("openResearch");
+researchButton.onclick = () => {
+  const nextEpoch = epochs[epochIndex + 1];
+  if (!nextEpoch) return showNotification("Ты достиг вершины развития цивилизации!");
+  const need = nextEpoch.xpRequired;
+  showNotification(`Следующая эпоха: ${nextEpoch.name}\nНужно ${need} опыта.`);
+};
+
+// Переход между эпохами
+function nextEpoch() {
+  if (epochIndex < epochs.length - 1 && xp >= epochs[epochIndex + 1].xpRequired) {
+    epochIndex++;
+    const newEra = epochs[epochIndex];
+    epochDisplay.textContent = `Эпоха: ${newEra.name}`;
+    bgHue = Math.random() * 360;
+    flashEffect(newEra.color);
+    epochSound.currentTime = 0;
+    epochSound.play();
+    playVoice();
+    changeMusic(newEra.music);
+    showNotification(`Добро пожаловать в ${newEra.name} эпоху!`);
+    saveGame();
+  } else {
+    showNotification("Недостаточно опыта!");
+  }
+}
+
+// Кнопка перехода
+const nextEraBtn = document.createElement("button");
+nextEraBtn.textContent = "🚀 Вперёд к новой эпохе";
+nextEraBtn.className = "menu";
+nextEraBtn.style.position = "absolute";
+nextEraBtn.style.bottom = "260px";
+nextEraBtn.style.left = "50%";
+nextEraBtn.style.transform = "translateX(-50%)";
+nextEraBtn.style.pointerEvents = "auto";
+nextEraBtn.onclick = nextEpoch;
+document.getElementById("ui").appendChild(nextEraBtn);
+
+// Смена музыки
+let currentMusic = bgMusic;
+function changeMusic(src) {
+  if (currentMusic) currentMusic.pause();
+  currentMusic = new Audio(src);
+  currentMusic.loop = true;
+  currentMusic.volume = 0.3;
+  currentMusic.play();
+}
+
+// Случайное воспроизведение голоса
+function playVoice() {
+  const v = new Audio(voiceLines[Math.floor(Math.random() * voiceLines.length)]);
+  v.volume = 0.4;
+  v.play();
+}
+
+// Атмосферные эффекты
+setInterval(() => {
+  if (Math.random() < 0.15) playVoice();
+}, 15000);
+// === БЛОК 5: Автосохранение, загрузка, стартовая сцена, финал ===
+
+// --- Автосохранение каждые 10 секунд ---
+setInterval(() => {
+  saveGame();
+}, 10000);
+
+// --- Эффект приветствия при старте ---
+function startIntro() {
+  showNotification("Добро пожаловать в Clicks 4.0 -- Story Edition!");
+  setTimeout(() => showNotification("Путешествуй сквозь эпохи и развивай цивилизацию!"), 4000);
+  createParticles(canvas.width / 2, canvas.height / 2, "#ffcc66");
+  clickSound.play();
+}
+window.addEventListener("load", startIntro);
+
+// --- Эффект завершения последней эпохи ---
+function checkEndGame() {
+  if (epochIndex >= epochs.length - 1 && xp >= epochs[epochs.length - 1].xpRequired + 1000) {
+    showNotification("🌌 Ты достиг предела технологий! Новая цивилизация рождается...");
+    const endMusic = new Audio("https://cdn.pixabay.com/audio/2022/07/31/audio_918d8b7ed7.mp3");
+    endMusic.volume = 0.4;
+    endMusic.play();
+    flashEffect("#33ccff");
+    setTimeout(() => {
+      createParticles(canvas.width / 2, canvas.height / 2, "#33ccff");
+    }, 3000);
+  }
+}
+setInterval(checkEndGame, 5000);
+
+// --- Адаптация под изменение экрана ---
+window.addEventListener("resize", () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
+
+// --- Финальные настройки интерфейса ---
+updateUI();
+saveGame();
+
+// Конец основного сценария
+</script>
+</body>
+</html>
